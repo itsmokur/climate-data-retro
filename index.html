@@ -591,6 +591,7 @@
   // ============================================================
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
   import { getAnalytics, isSupported as analyticsSupported } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-analytics.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
   import {
     getDatabase, ref, set, update, onValue, serverTimestamp, onDisconnect
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
@@ -608,6 +609,7 @@
 
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
+  const auth = getAuth(app);
 
   try { if (await analyticsSupported()) getAnalytics(app); } catch (_) {}
 
@@ -844,10 +846,11 @@
   // ============================================================
   // JOIN
   // ============================================================
-  window.joinBoard = function joinBoard() {
+  window.joinBoard = async function joinBoard() {
     const name = document.getElementById('welcomeNameInput').value.trim();
     if (!name) return;
 
+    await signInAnonymously(auth);
     currentUser = name;
     document.getElementById('userAvatarEl').textContent = name[0].toUpperCase();
     document.getElementById('welcomeModal').style.display = 'none';
