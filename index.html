@@ -30,6 +30,7 @@
     color: var(--text);
     min-height: 100vh;
   }
+
   header {
     background: var(--surface);
     border-bottom: 1px solid var(--border);
@@ -111,6 +112,7 @@
     color: var(--text);
   }
   .phase-divider { width: 24px; height: 1px; background: var(--border); }
+
   main { padding: 24px; }
 
   .board {
@@ -538,9 +540,13 @@
   <div class="logo">Retro<span>.</span></div>
   <input class="retro-name-input" id="retroTitle" placeholder="Retro title..." value="Sprint Retrospective #1" />
   <div class="header-spacer"></div>
+
   <div class="sync-dot" id="syncDot"></div>
   <span class="sync-label" id="syncLabel">Live</span>
+  <span class="sync-label" id="presenceLabel" title="">0 online</span>
+
   <button class="btn-ghost" style="font-size:12px" onclick="openShare()">🔗 Share</button>
+
   <div class="user-section">
     <div class="user-avatar" id="userAvatarEl">?</div>
   </div>
@@ -548,11 +554,11 @@
 
 <!-- PHASE BAR -->
 <div class="phase-bar">
-  <button class="phase-btn active" onclick="setPhase(0, this)">✍️ Reflect</button>
+  <button class="phase-btn active" onclick="setPhase(0)">✍️ Reflect</button>
   <div class="phase-divider"></div>
-  <button class="phase-btn" onclick="setPhase(1, this)">👍 Vote</button>
+  <button class="phase-btn" onclick="setPhase(1)">👍 Vote</button>
   <div class="phase-divider"></div>
-  <button class="phase-btn" onclick="setPhase(2, this)">💬 Discuss</button>
+  <button class="phase-btn" onclick="setPhase(2)">💬 Discuss</button>
 </div>
 
 <!-- TIMER BAR -->
@@ -581,11 +587,13 @@
 
 <script type="module">
   // ============================================================
-  // FIREBASE SETUP
+  // FIREBASE (Realtime Database + Presence + Shared Timer)
   // ============================================================
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-  import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import { getAnalytics, isSupported as analyticsSupported } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-analytics.js";
+  import {
+    getDatabase, ref, set, update, onValue, serverTimestamp, onDisconnect
+  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyDaQWhQ6s0dZYxMjbmBBsdZ5fLjSqC_qQY",
@@ -599,12 +607,9 @@
   };
 
   const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+  const db = getDatabase(app);
 
-  // Optional analytics (only works on https + supported env)
-  try {
-    if (await analyticsSupported()) getAnalytics(app);
-  } catch (_) {}
+  try { if (await analyticsSupported()) getAnalytics(app); } catch (_) {}
 
   // ============================================================
   // STATE
@@ -627,19 +632,18 @@
   let currentUser = '';
   let boardId = '';
   let addingTo = null;
-  let boardRef = null;
 
-  let saveTimer = null;
+  // Refs
+  let boardStateRef = null;   // /boards/{boardId}/state
+  let timerRef = null;        // /boards/{boardId}/timer
+  let presenceMeRef = null;   // /presence/{boardId}/{clientId}
+  let presenceListRef = null; // /presence/{boardId}
 
-  function initBoardId() {
-    if (window.location.hash && window.location.hash.length > 2) boardId = window.location.hash.slice(1);
-    else {
-      boardId = Math.random().toString(36).slice(2, 10);
-      window.location.hash = boardId;
-    }
-    boardRef = doc(db, "retros", boardId);
-  }
+  const clientId = (crypto?.randomUUID?.() || (Date.now() + '_' + Math.random().toString(36).slice(2, 10)));
 
+  // ============================================================
+  // UI helpers
+  // ============================================================
   function setSyncStatus(mode) {
     const dot = document.getElementById('syncDot');
     const label = document.getElementById('syncLabel');
@@ -648,46 +652,194 @@
     else if (mode === 'offline') { dot.classList.add('syncing'); label.textContent = 'Offline'; }
     else { dot.classList.remove('syncing'); label.textContent = 'Live'; }
   }
-  window.addEventListener('online', () => setSyncStatus('live'));
-  window.addEventListener('offline', () => setSyncStatus('offline'));
 
-  function subscribeBoard() {
+  function toast(msg, duration = 2500) {
+    const container = document.getElementById('toastContainer');
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), duration);
+  }
+  window.toast = toast;
+
+  function escHtml(str) {
+    return String(str || '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  // ============================================================
+  // BOARD ID (URL hash)
+  // ============================================================
+  function initBoardId() {
+    if (window.location.hash && window.location.hash.length > 2) boardId = window.location.hash.slice(1);
+    else {
+      boardId = Math.random().toString(36).slice(2, 10);
+      window.location.hash = boardId;
+    }
+
+    boardStateRef   = ref(db, `boards/${boardId}/state`);
+    timerRef        = ref(db, `boards/${boardId}/timer`);
+    presenceMeRef   = ref(db, `presence/${boardId}/${clientId}`);
+    presenceListRef = ref(db, `presence/${boardId}`);
+  }
+
+  // ============================================================
+  // PRESENCE
+  // ============================================================
+  function initPresence() {
+    // mark online + auto remove on disconnect
+    set(presenceMeRef, { name: currentUser, online: true, joinedAt: serverTimestamp() });
+    onDisconnect(presenceMeRef).remove();
+
+    // listen online users
+    onValue(presenceListRef, (snap) => {
+      const val = snap.val() || {};
+      const users = Object.values(val).filter(u => u && u.online);
+      const count = users.length;
+      const label = document.getElementById('presenceLabel');
+
+      if (label) {
+        label.textContent = `${count} online`;
+        const names = users.map(u => u.name).filter(Boolean);
+        label.title = names.length ? names.join(', ') : '';
+      }
+    });
+  }
+
+  // ============================================================
+  // BOARD STATE SYNC
+  // ============================================================
+  function subscribeBoardState() {
     setSyncStatus('syncing');
-    onSnapshot(boardRef, (snap) => {
+    onValue(boardStateRef, async (snap) => {
       if (snap.exists()) {
-        const data = snap.data();
-        if (data && data.state) state = data.state;
+        state = snap.val() || state;
       } else {
-        setDoc(boardRef, { state, updatedAt: serverTimestamp() }).catch(() => {});
+        await set(boardStateRef, state);
       }
       setSyncStatus('live');
       render();
     }, (err) => {
       console.error(err);
       setSyncStatus('offline');
-      toast('Firestore bağlantısı kurulamadı (rules / config kontrol et).', 5000);
+      toast('RTDB state subscribe error (rules?)', 5000);
     });
   }
 
-  async function saveState(immediate = true) {
-    if (!boardRef) return;
+  let saveDebounce = null;
+  function saveState(immediate = true) {
+    if (!boardStateRef) return;
     setSyncStatus('syncing');
 
     if (!immediate) {
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => saveState(true), 350);
+      clearTimeout(saveDebounce);
+      saveDebounce = setTimeout(() => saveState(true), 250);
       return;
     }
 
-    try {
-      await setDoc(boardRef, { state, updatedAt: serverTimestamp() }, { merge: true });
-      setSyncStatus('live');
-    } catch (e) {
-      console.error(e);
-      setSyncStatus('offline');
-      toast('Kaydedilemedi. İnternet / Firestore rules kontrol et.', 4000);
+    set(boardStateRef, state)
+      .then(() => setSyncStatus('live'))
+      .catch((e) => {
+        console.error(e);
+        setSyncStatus('offline');
+        toast('State save failed (rules / connection).', 4000);
+      });
+  }
+
+  // ============================================================
+  // SHARED TIMER
+  // Model: { durationSec, running, endsAtMs, remainingSec }
+  // ============================================================
+  let timerModel = {
+    durationSec: 5 * 60,
+    running: false,
+    endsAtMs: null,
+    remainingSec: 5 * 60
+  };
+
+  function subscribeTimer() {
+    onValue(timerRef, async (snap) => {
+      if (snap.exists()) {
+        timerModel = snap.val() || timerModel;
+      } else {
+        await set(timerRef, timerModel);
+      }
+      updateTimerDisplayFromModel();
+    }, (err) => {
+      console.error(err);
+      toast('RTDB timer subscribe error (rules?)', 5000);
+    });
+  }
+
+  function nowMs() { return Date.now(); }
+
+  function computeRemainingSec() {
+    if (timerModel.running && timerModel.endsAtMs) {
+      const diff = Math.max(0, timerModel.endsAtMs - nowMs());
+      return Math.ceil(diff / 1000);
+    }
+    return Math.max(0, timerModel.remainingSec ?? timerModel.durationSec ?? 0);
+  }
+
+  function formatTime(s) {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  }
+
+  function updateTimerDisplayFromModel() {
+    const remaining = computeRemainingSec();
+    const el = document.getElementById('timerDisplay');
+    const btn = document.getElementById('timerStartBtn');
+    if (!el) return;
+
+    el.textContent = formatTime(remaining);
+    el.classList.toggle('warning', remaining <= 30 && timerModel.running);
+
+    if (btn) {
+      btn.textContent = timerModel.running ? '⏸' : '▶';
+      btn.classList.toggle('running', timerModel.running);
+    }
+
+    if (timerModel.running && remaining <= 0) {
+      update(timerRef, { running: false, remainingSec: 0, endsAtMs: null }).catch(() => {});
+      toast('⏰ Time is up!', 4000);
     }
   }
+
+  // Local ticker just for UI refresh
+  setInterval(() => {
+    if (timerRef) updateTimerDisplayFromModel();
+  }, 1000);
+
+  window.setTimer = function setTimer(minutes) {
+    const dur = Math.max(1, minutes) * 60;
+    update(timerRef, { durationSec: dur, running: false, remainingSec: dur, endsAtMs: null })
+      .catch(console.error);
+  };
+
+  window.toggleTimer = function toggleTimer() {
+    if (!timerModel.running) startSharedTimer();
+    else pauseSharedTimer();
+  };
+
+  function startSharedTimer() {
+    const remaining = computeRemainingSec();
+    const endsAt = nowMs() + remaining * 1000;
+    update(timerRef, { running: true, endsAtMs: endsAt, remainingSec: remaining }).catch(console.error);
+  }
+
+  function pauseSharedTimer() {
+    const remaining = computeRemainingSec();
+    update(timerRef, { running: false, endsAtMs: null, remainingSec: remaining }).catch(console.error);
+  }
+
+  window.resetTimer = function resetTimer() {
+    const dur = timerModel.durationSec ?? (5 * 60);
+    update(timerRef, { running: false, remainingSec: dur, endsAtMs: null }).catch(console.error);
+  };
 
   // ============================================================
   // JOIN
@@ -695,12 +847,16 @@
   window.joinBoard = function joinBoard() {
     const name = document.getElementById('welcomeNameInput').value.trim();
     if (!name) return;
+
     currentUser = name;
     document.getElementById('userAvatarEl').textContent = name[0].toUpperCase();
     document.getElementById('welcomeModal').style.display = 'none';
-    subscribeBoard();
+
+    initPresence();
+    subscribeBoardState();
+    subscribeTimer();
     render();
-  }
+  };
 
   // ============================================================
   // RENDER
@@ -724,7 +880,7 @@
     board.style.gridTemplateColumns = 'repeat(4, 1fr)';
 
     COLUMNS.forEach(col => {
-      let cards = Object.values(state.cards || {}).filter(c => c.col === col.id)
+      const cards = Object.values(state.cards || {}).filter(c => c.col === col.id)
         .sort((a, b) => (b.ts || 0) - (a.ts || 0));
 
       const colEl = document.createElement('div');
@@ -815,7 +971,7 @@
 
     let boardColsHtml = '';
     COLUMNS.forEach(col => {
-      let cards = allCards.filter(c => c.col === col.id);
+      const cards = allCards.filter(c => c.col === col.id);
       boardColsHtml += `
         <div class="column">
           <div class="column-header">
@@ -869,21 +1025,15 @@
         <div style="display:flex;gap:4px;align-items:center">
           ${state.phase >= 1 ? `<button class="vote-btn ${myVote?'voted':''}" onclick="toggleVote('${c.id}')">${myVote?'❤️':'🤍'} ${voteCount}</button>` : ''}
           ${isOwner && state.phase === 0 ? `<div class="card-actions">
-            <button class="card-action-btn" title="Sil" onclick="deleteCard('${c.id}')">✕</button>
+            <button class="card-action-btn" title="Delete" onclick="deleteCard('${c.id}')">✕</button>
           </div>` : ''}
         </div>
       </div>
     </div>`;
   }
 
-  function escHtml(str) {
-    return String(str || '')
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-  }
-
   // ============================================================
-  // ACTIONS (expose to window for inline onclick)
+  // ACTIONS exposed (inline onclick)
   // ============================================================
   window.showAdd = function showAdd(colId) {
     addingTo = colId;
@@ -892,12 +1042,12 @@
       const ta = document.getElementById('textarea-' + colId);
       if (ta) ta.focus();
     }, 50);
-  }
+  };
 
   window.cancelAdd = function cancelAdd() {
     addingTo = null;
     render();
-  }
+  };
 
   window.addCard = function addCard(colId) {
     const ta = document.getElementById('textarea-' + colId);
@@ -913,7 +1063,7 @@
     addingTo = null;
     render();
     toast('Card added!');
-  }
+  };
 
   window.deleteCard = function deleteCard(id) {
     if (!confirm('Delete this card?')) return;
@@ -921,7 +1071,7 @@
     delete state.cards[id];
     saveState(true);
     render();
-  }
+  };
 
   window.toggleVote = function toggleVote(id) {
     if (!state.cards || !state.cards[id]) return;
@@ -933,14 +1083,14 @@
 
     saveState(true);
     render();
-  }
+  };
 
   window.toggleDiscussed = function toggleDiscussed(id) {
     state.discussed = state.discussed || {};
     state.discussed[id] = !state.discussed[id];
     saveState(true);
     render();
-  }
+  };
 
   window.setActiveDiscuss = function setActiveDiscuss(id) {
     state.activeDiscuss = state.activeDiscuss === id ? null : id;
@@ -950,7 +1100,7 @@
       const el = document.querySelector(`.card[data-id="${id}"]`);
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 50);
-  }
+  };
 
   window.setPhase = function setPhase(p) {
     state.phase = p;
@@ -960,12 +1110,11 @@
     const el = document.getElementById('timerPhaseLabel');
     if (el) el.textContent = labels[p];
     toast('Phase: ' + ['Reflect', 'Vote', 'Discuss'][p]);
-  }
+  };
 
   // Title
   document.addEventListener('DOMContentLoaded', () => {
-    const titleEl = document.getElementById('retroTitle');
-    titleEl.addEventListener('input', e => {
+    document.getElementById('retroTitle').addEventListener('input', e => {
       state.title = e.target.value;
       saveState(false);
     });
@@ -975,88 +1124,19 @@
   window.openShare = function openShare() {
     document.getElementById('shareUrlDisplay').textContent = window.location.href;
     document.getElementById('shareModal').style.display = 'flex';
-  }
+  };
   window.closeShare = function closeShare() {
     document.getElementById('shareModal').style.display = 'none';
-  }
+  };
   window.copyShareUrl = async function copyShareUrl() {
     await navigator.clipboard.writeText(window.location.href);
     toast('Link copied! 🎉');
     closeShare();
-  }
-
-  // Toast
-  function toast(msg, duration = 2500) {
-    const container = document.getElementById('toastContainer');
-    const el = document.createElement('div');
-    el.className = 'toast';
-    el.textContent = msg;
-    container.appendChild(el);
-    setTimeout(() => el.remove(), duration);
-  }
-  window.toast = toast;
-
-  // Timer (local)
-  let timerTotal = 5 * 60;
-  let timerRemaining = timerTotal;
-  let timerInterval = null;
-  let timerRunning = false;
-
-  function formatTime(s) {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
-  }
-  function updateTimerDisplay() {
-    const el = document.getElementById('timerDisplay');
-    const btn = document.getElementById('timerStartBtn');
-    if (!el) return;
-    el.textContent = formatTime(timerRemaining);
-    el.classList.toggle('warning', timerRemaining <= 30 && timerRunning);
-    if (btn) {
-      btn.textContent = timerRunning ? '⏸' : '▶';
-      btn.classList.toggle('running', timerRunning);
-    }
-  }
-
-  window.setTimer = function setTimer(minutes) {
-    pauseTimer();
-    timerTotal = minutes * 60;
-    timerRemaining = timerTotal;
-    updateTimerDisplay();
-  }
-  window.toggleTimer = function toggleTimer() {
-    if (timerRunning) pauseTimer();
-    else startTimer();
-  }
-  function startTimer() {
-    if (timerRemaining <= 0) timerRemaining = timerTotal;
-    timerRunning = true;
-    updateTimerDisplay();
-    timerInterval = setInterval(() => {
-      timerRemaining--;
-      updateTimerDisplay();
-      if (timerRemaining <= 0) {
-        pauseTimer();
-        toast('⏰ Time is up!', 4000);
-      }
-    }, 1000);
-  }
-  function pauseTimer() {
-    timerRunning = false;
-    clearInterval(timerInterval);
-    timerInterval = null;
-    updateTimerDisplay();
-  }
-  window.resetTimer = function resetTimer() {
-    pauseTimer();
-    timerRemaining = timerTotal;
-    updateTimerDisplay();
-  }
+  };
 
   // INIT
   initBoardId();
-  updateTimerDisplay();
+  setSyncStatus('live');
 </script>
 
 </body>
