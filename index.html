@@ -1,598 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Retro Board</title>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,600;0,700;1,300&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #f0ede8;
-    --surface: #faf9f6;
-    --card: #ffffff;
-    --text: #1a1714;
-    --muted: #8a8279;
-    --border: #e2ddd8;
-    --green: #2d6a4f;
-    --green-light: #d8f3dc;
-    --red: #c1121f;
-    --red-light: #ffe8e9;
-    --blue: #1d4e89;
-    --blue-light: #dbeafe;
-    --amber: #b45309;
-    --amber-light: #fef3c7;
-    --accent: #6d4c41;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: 'DM Sans', sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-  }
-
-  header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 0 24px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    height: 60px;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-  }
-  .logo {
-    font-family: 'Fraunces', serif;
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--text);
-    letter-spacing: -0.5px;
-  }
-  .logo span { color: var(--accent); }
-  .retro-name-input {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    font-weight: 500;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 10px;
-    background: var(--bg);
-    color: var(--text);
-    width: 220px;
-  }
-  .retro-name-input:focus { outline: 2px solid var(--accent); border-color: transparent; }
-  .header-spacer { flex: 1; }
-  .user-section { display: flex; align-items: center; gap: 8px; }
-  .user-avatar {
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    background: var(--accent);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    font-weight: 600;
-    flex-shrink: 0;
-  }
-
-  .phase-bar {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 10px 24px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .phase-btn {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 12px;
-    font-weight: 500;
-    padding: 6px 14px;
-    border-radius: 20px;
-    border: 1.5px solid var(--border);
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    transition: all 0.15s;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .phase-btn.active {
-    background: var(--text);
-    color: white;
-    border-color: var(--text);
-  }
-  .phase-btn:hover:not(.active) {
-    border-color: var(--text);
-    color: var(--text);
-  }
-  .phase-divider { width: 24px; height: 1px; background: var(--border); }
-
-  main { padding: 24px; }
-
-  .board {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
-    min-height: calc(100vh - 180px);
-  }
-  @media (max-width: 900px) { .board { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 600px) { .board { grid-template-columns: 1fr; } }
-
-  .column {
-    background: var(--surface);
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .column-header {
-    padding: 14px 16px 12px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .col-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .col-title { font-family: 'Fraunces', serif; font-size: 15px; font-weight: 600; flex: 1; }
-  .col-count {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 7px;
-    border-radius: 10px;
-    color: var(--muted);
-    background: var(--bg);
-    border: 1px solid var(--border);
-  }
-  .column-body {
-    flex: 1;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    overflow-y: auto;
-    min-height: 200px;
-  }
-  .column-body.drag-over { background: var(--bg); }
-
-  .card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px;
-    cursor: grab;
-    transition: box-shadow 0.15s, transform 0.15s;
-    position: relative;
-  }
-  .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
-  .card.dragging { opacity: 0.4; }
-  .card-text { font-size: 13px; line-height: 1.5; color: var(--text); }
-  .card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
-  .card-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
-  .card:hover .card-actions { opacity: 1; }
-  .card-action-btn {
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    background: var(--bg);
-    color: var(--muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    transition: all 0.1s;
-  }
-  .card-action-btn:hover { background: var(--text); color: white; border-color: var(--text); }
-  .vote-btn {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 7px;
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    background: var(--bg);
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 11px;
-    font-weight: 600;
-    transition: all 0.15s;
-  }
-  .vote-btn:hover, .vote-btn.voted {
-    background: var(--amber-light);
-    border-color: var(--amber);
-    color: var(--amber);
-  }
-
-  .add-card-area {
-    border: 1.5px dashed var(--border);
-    border-radius: 8px;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .add-card-textarea {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 13px;
-    border: none;
-    outline: none;
-    background: transparent;
-    resize: none;
-    color: var(--text);
-    width: 100%;
-    min-height: 60px;
-  }
-  .add-card-textarea::placeholder { color: var(--muted); }
-  .add-card-actions { display: flex; gap: 6px; justify-content: flex-end; }
-  .btn-primary {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 5px 12px;
-    border-radius: 6px;
-    border: none;
-    background: var(--text);
-    color: white;
-    cursor: pointer;
-    transition: opacity 0.15s;
-  }
-  .btn-primary:hover { opacity: 0.8; }
-  .btn-ghost {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 12px;
-    font-weight: 500;
-    padding: 5px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .btn-ghost:hover { border-color: var(--text); color: var(--text); }
-  .add-card-trigger {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    padding: 6px 8px;
-    border-radius: 6px;
-    border: none;
-    background: transparent;
-    width: 100%;
-    transition: all 0.15s;
-  }
-  .add-card-trigger:hover { background: var(--bg); color: var(--text); }
-
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.4);
-    z-index: 200;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    backdrop-filter: blur(2px);
-  }
-  .modal {
-    background: var(--surface);
-    border-radius: 14px;
-    padding: 24px;
-    width: 480px;
-    max-width: 90vw;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-  }
-  .modal h2 {
-    font-family: 'Fraunces', serif;
-    font-size: 20px;
-    font-weight: 700;
-    margin-bottom: 6px;
-  }
-  .modal p { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
-  .modal-input {
-    width: 100%;
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    border: 1.5px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 14px;
-    background: var(--bg);
-    color: var(--text);
-    margin-bottom: 14px;
-  }
-  .modal-input:focus { outline: 2px solid var(--accent); border-color: transparent; }
-  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
-
-  .timer-bar {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 8px 24px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .timer-label { font-size: 12px; font-weight: 600; color: var(--muted); }
-  .timer-display {
-    font-family: 'Fraunces', serif;
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: 2px;
-    color: var(--text);
-    min-width: 72px;
-    transition: color 0.3s;
-  }
-  .timer-display.warning { color: #ef4444; }
-  .timer-controls { display: flex; gap: 6px; align-items: center; }
-  .timer-preset {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 4px 9px;
-    border-radius: 12px;
-    border: 1.5px solid var(--border);
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .timer-preset:hover { border-color: var(--text); color: var(--text); }
-  .timer-btn {
-    width: 30px; height: 30px;
-    border-radius: 8px;
-    border: 1.5px solid var(--border);
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 14px;
-    display: flex; align-items: center; justify-content: center;
-    transition: all 0.15s;
-  }
-  .timer-btn:hover { background: var(--text); color: white; border-color: var(--text); }
-  .timer-btn.running { background: var(--green); color: white; border-color: var(--green); }
-  .timer-spacer { flex: 1; }
-
-  .rank-badge {
-    font-size: 10px;
-    font-weight: 700;
-    padding: 2px 6px;
-    border-radius: 8px;
-    background: var(--amber-light);
-    color: var(--amber);
-    border: 1px solid var(--amber);
-  }
-  .rank-badge.top { background: #fef9c3; color: #92400e; border-color: #fcd34d; }
-
-  .sync-dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: #22c55e;
-    animation: pulse 2s infinite;
-  }
-  .sync-dot.syncing { background: #f59e0b; animation: none; }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-  .sync-label { font-size: 11px; color: var(--muted); }
-
-  .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
-  .toast {
-    background: var(--text);
-    color: white;
-    padding: 10px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 500;
-    animation: slideIn 0.3s ease;
-    max-width: 300px;
-  }
-  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-
-  .share-url {
-    font-family: monospace;
-    font-size: 12px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 10px;
-    word-break: break-all;
-    color: var(--muted);
-    margin-bottom: 12px;
-  }
-  .btn-share {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 8px 16px;
-    border-radius: 8px;
-    border: none;
-    background: var(--green);
-    color: white;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  /* DISCUSS LAYOUT */
-  .discuss-layout { display: flex; gap: 20px; min-height: calc(100vh - 200px); }
-  .discuss-sidebar {
-    width: 300px;
-    flex-shrink: 0;
-    background: var(--surface);
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    position: sticky;
-    top: 160px;
-    max-height: calc(100vh - 180px);
-  }
-  .discuss-sidebar-header {
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .discuss-sidebar-header h3 { font-family: 'Fraunces', serif; font-size: 14px; font-weight: 700; flex: 1; }
-  .discuss-progress { font-size: 11px; color: var(--muted); font-weight: 600; }
-  .discuss-list { flex: 1; overflow-y: auto; padding: 8px 0; }
-  .discuss-section-label {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-    color: var(--muted);
-    padding: 8px 16px 4px;
-  }
-  .discuss-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 8px 16px;
-    cursor: pointer;
-    border-left: 3px solid transparent;
-    transition: all 0.15s;
-    border-bottom: 1px solid transparent;
-  }
-  .discuss-item:hover { background: var(--bg); }
-  .discuss-item.active { background: var(--bg); border-left-color: var(--accent); }
-  .discuss-item.done { opacity: 0.45; }
-  .discuss-item.done .discuss-item-text { text-decoration: line-through; }
-  .discuss-check {
-    width: 18px; height: 18px;
-    border-radius: 50%;
-    border: 2px solid var(--border);
-    flex-shrink: 0;
-    margin-top: 1px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 10px;
-    transition: all 0.15s;
-    cursor: pointer;
-  }
-  .discuss-check:hover { border-color: var(--green); }
-  .discuss-item.done .discuss-check { background: var(--green); border-color: var(--green); color: white; }
-  .discuss-item-body { flex: 1; min-width: 0; }
-  .discuss-item-text {
-    font-size: 12px; line-height: 1.4; color: var(--text);
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  }
-  .discuss-item-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
-  .discuss-vote-pill { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; background: var(--amber-light); color: var(--amber); }
-  .discuss-rank-num {
-    font-family: 'Fraunces', serif;
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--muted);
-    min-width: 18px;
-    text-align: center;
-    flex-shrink: 0;
-    margin-top: 1px;
-  }
-  .discuss-rank-num.top { color: var(--amber); }
-  .progress-bar-wrap { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; margin: 0 16px 10px; }
-  .progress-bar-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width 0.4s ease; }
-
-  .discuss-board { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; align-content: start; }
-  @media (max-width: 1200px) { .discuss-board { grid-template-columns: repeat(2, 1fr); } }
-
-  .empty-card { text-align: center; color: var(--muted); font-size: 12px; padding: 20px 8px; }
-</style>
-</head>
-<body>
-
-<!-- WELCOME MODAL -->
-<div class="modal-overlay" id="welcomeModal">
-  <div class="modal">
-    <h2>Welcome to the Retro 👋</h2>
-    <p>Enter your name to join. Everyone can access the same board by sharing the link.</p>
-    <input class="modal-input" id="welcomeNameInput" placeholder="Your name (e.g. Alex)" maxlength="30" />
-    <div class="modal-actions">
-      <button class="btn-primary" onclick="joinBoard()">Join →</button>
-    </div>
-  </div>
-</div>
-
-<!-- SHARE MODAL -->
-<div class="modal-overlay" id="shareModal" style="display:none">
-  <div class="modal">
-    <h2>Share this Retro 🔗</h2>
-    <p>Share this link with your team. Everyone can join directly.</p>
-    <div class="share-url" id="shareUrlDisplay"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn-ghost" onclick="closeShare()">Close</button>
-      <button class="btn-share" onclick="copyShareUrl()">📋 Copy Link</button>
-    </div>
-  </div>
-</div>
-
-<!-- HEADER -->
-<header>
-  <div class="logo">Retro<span>.</span></div>
-  <input class="retro-name-input" id="retroTitle" placeholder="Retro title..." value="Sprint Retrospective #1" />
-  <div class="header-spacer"></div>
-
-  <div class="sync-dot" id="syncDot"></div>
-  <span class="sync-label" id="syncLabel">Live</span>
-  <span class="sync-label" id="presenceLabel" title="">0 online</span>
-
-  <button class="btn-ghost" style="font-size:12px" onclick="openShare()">🔗 Share</button>
-
-  <div class="user-section">
-    <div class="user-avatar" id="userAvatarEl">?</div>
-  </div>
-</header>
-
-<!-- PHASE BAR -->
-<div class="phase-bar">
-  <button class="phase-btn active" onclick="setPhase(0)">✍️ Reflect</button>
-  <div class="phase-divider"></div>
-  <button class="phase-btn" onclick="setPhase(1)">👍 Vote</button>
-  <div class="phase-divider"></div>
-  <button class="phase-btn" onclick="setPhase(2)">💬 Discuss</button>
-</div>
-
-<!-- TIMER BAR -->
-<div class="timer-bar">
-  <span class="timer-label">⏱ TIMER</span>
-  <div class="timer-display" id="timerDisplay">05:00</div>
-  <div class="timer-controls">
-    <button class="timer-preset" onclick="setTimer(3)">3m</button>
-    <button class="timer-preset" onclick="setTimer(5)">5m</button>
-    <button class="timer-preset" onclick="setTimer(10)">10m</button>
-    <button class="timer-preset" onclick="setTimer(15)">15m</button>
-    <button class="timer-btn" id="timerStartBtn" onclick="toggleTimer()">▶</button>
-    <button class="timer-btn" onclick="resetTimer()" title="Reset">↺</button>
-  </div>
-  <div class="timer-spacer"></div>
-  <span class="timer-label" id="timerPhaseLabel">Reflect phase</span>
-</div>
-
-<!-- MAIN BOARD -->
-<main>
-  <div class="board" id="board"></div>
-</main>
-
-<!-- TOAST CONTAINER -->
-<div class="toast-container" id="toastContainer"></div>
-
 <script type="module">
-  // ============================================================
-  // FIREBASE (Realtime Database + Presence + Shared Timer)
-  // ============================================================
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
   import { getAnalytics, isSupported as analyticsSupported } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-analytics.js";
   import {
-    getDatabase, ref, set, update, onValue, serverTimestamp, onDisconnect
+    getDatabase, ref, set, update, onValue, serverTimestamp, onDisconnect, get
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 
   const firebaseConfig = {
@@ -636,10 +46,13 @@
   // Refs
   let boardStateRef = null;   // /boards/{boardId}/state
   let timerRef = null;        // /boards/{boardId}/timer
+  let metaRef = null;         // /boards/{boardId}/meta
   let presenceMeRef = null;   // /presence/{boardId}/{clientId}
   let presenceListRef = null; // /presence/{boardId}
 
   const clientId = (crypto?.randomUUID?.() || (Date.now() + '_' + Math.random().toString(36).slice(2, 10)));
+  let hostClientId = null;
+  const isHost = () => hostClientId && hostClientId === clientId;
 
   // ============================================================
   // UI helpers
@@ -670,7 +83,7 @@
   }
 
   // ============================================================
-  // BOARD ID (URL hash)
+  // BOARD ID
   // ============================================================
   function initBoardId() {
     if (window.location.hash && window.location.hash.length > 2) boardId = window.location.hash.slice(1);
@@ -681,27 +94,49 @@
 
     boardStateRef   = ref(db, `boards/${boardId}/state`);
     timerRef        = ref(db, `boards/${boardId}/timer`);
+    metaRef         = ref(db, `boards/${boardId}/meta`);
     presenceMeRef   = ref(db, `presence/${boardId}/${clientId}`);
     presenceListRef = ref(db, `presence/${boardId}`);
+  }
+
+  // ============================================================
+  // META / HOST (first joiner becomes host)
+  // ============================================================
+  async function initMetaHost() {
+    try {
+      const snap = await get(metaRef);
+      if (!snap.exists()) {
+        await set(metaRef, { hostClientId: clientId, hostName: currentUser, createdAt: serverTimestamp() });
+        hostClientId = clientId;
+      } else {
+        const m = snap.val() || {};
+        hostClientId = m.hostClientId || null;
+      }
+
+      // keep updated
+      onValue(metaRef, (s) => {
+        const m = s.val() || {};
+        hostClientId = m.hostClientId || null;
+      });
+    } catch (e) {
+      console.error(e);
+      // not fatal
+    }
   }
 
   // ============================================================
   // PRESENCE
   // ============================================================
   function initPresence() {
-    // mark online + auto remove on disconnect
-    set(presenceMeRef, { name: currentUser, online: true, joinedAt: serverTimestamp() });
+    set(presenceMeRef, { name: currentUser, online: true, joinedAt: serverTimestamp(), clientId });
     onDisconnect(presenceMeRef).remove();
 
-    // listen online users
     onValue(presenceListRef, (snap) => {
       const val = snap.val() || {};
       const users = Object.values(val).filter(u => u && u.online);
-      const count = users.length;
       const label = document.getElementById('presenceLabel');
-
       if (label) {
-        label.textContent = `${count} online`;
+        label.textContent = `${users.length} online`;
         const names = users.map(u => u.name).filter(Boolean);
         label.title = names.length ? names.join(', ') : '';
       }
@@ -714,11 +149,9 @@
   function subscribeBoardState() {
     setSyncStatus('syncing');
     onValue(boardStateRef, async (snap) => {
-      if (snap.exists()) {
-        state = snap.val() || state;
-      } else {
-        await set(boardStateRef, state);
-      }
+      if (snap.exists()) state = snap.val() || state;
+      else await set(boardStateRef, state);
+
       setSyncStatus('live');
       render();
     }, (err) => {
@@ -749,8 +182,7 @@
   }
 
   // ============================================================
-  // SHARED TIMER
-  // Model: { durationSec, running, endsAtMs, remainingSec }
+  // SHARED TIMER + HIDE CARDS UNTIL END
   // ============================================================
   let timerModel = {
     durationSec: 5 * 60,
@@ -761,12 +193,10 @@
 
   function subscribeTimer() {
     onValue(timerRef, async (snap) => {
-      if (snap.exists()) {
-        timerModel = snap.val() || timerModel;
-      } else {
-        await set(timerRef, timerModel);
-      }
+      if (snap.exists()) timerModel = snap.val() || timerModel;
+      else await set(timerRef, timerModel);
       updateTimerDisplayFromModel();
+      render(); // re-render to flip hidden/visible
     }, (err) => {
       console.error(err);
       toast('RTDB timer subscribe error (rules?)', 5000);
@@ -781,6 +211,20 @@
       return Math.ceil(diff / 1000);
     }
     return Math.max(0, timerModel.remainingSec ?? timerModel.durationSec ?? 0);
+  }
+
+  function timerEverStarted() {
+    const dur = timerModel.durationSec ?? (5 * 60);
+    const rem = timerModel.remainingSec ?? dur;
+    return timerModel.running || !!timerModel.endsAtMs || rem !== dur;
+  }
+
+  function cardsHiddenNow() {
+    // Rule:
+    // - if timer never started => NOT hidden (so people can see while setting up)
+    // - once timer started => hidden until remaining hits 0
+    if (!timerEverStarted()) return false;
+    return computeRemainingSec() > 0;
   }
 
   function formatTime(s) {
@@ -809,15 +253,19 @@
     }
   }
 
-  // Local ticker just for UI refresh
+  // UI refresh ticker
   setInterval(() => {
-    if (timerRef) updateTimerDisplayFromModel();
+    if (timerRef) {
+      const before = cardsHiddenNow();
+      updateTimerDisplayFromModel();
+      const after = cardsHiddenNow();
+      if (before !== after) render();
+    }
   }, 1000);
 
   window.setTimer = function setTimer(minutes) {
     const dur = Math.max(1, minutes) * 60;
-    update(timerRef, { durationSec: dur, running: false, remainingSec: dur, endsAtMs: null })
-      .catch(console.error);
+    update(timerRef, { durationSec: dur, running: false, remainingSec: dur, endsAtMs: null }).catch(console.error);
   };
 
   window.toggleTimer = function toggleTimer() {
@@ -844,7 +292,7 @@
   // ============================================================
   // JOIN
   // ============================================================
-  window.joinBoard = function joinBoard() {
+  window.joinBoard = async function joinBoard() {
     const name = document.getElementById('welcomeNameInput').value.trim();
     if (!name) return;
 
@@ -853,6 +301,7 @@
     document.getElementById('welcomeModal').style.display = 'none';
 
     initPresence();
+    await initMetaHost();     // enables host delete
     subscribeBoardState();
     subscribeTimer();
     render();
@@ -876,6 +325,7 @@
   }
 
   function renderBoardView(board) {
+    const hidden = cardsHiddenNow();
     board.style.display = 'grid';
     board.style.gridTemplateColumns = 'repeat(4, 1fr)';
 
@@ -887,18 +337,25 @@
       colEl.className = 'column';
       colEl.dataset.col = col.id;
 
-      colEl.addEventListener('dragover', e => { e.preventDefault(); colEl.querySelector('.column-body').classList.add('drag-over'); });
-      colEl.addEventListener('dragleave', () => { colEl.querySelector('.column-body').classList.remove('drag-over'); });
-      colEl.addEventListener('drop', e => {
-        e.preventDefault();
-        colEl.querySelector('.column-body').classList.remove('drag-over');
-        const cardId = e.dataTransfer.getData('cardId');
-        if (cardId && state.cards[cardId]) {
-          state.cards[cardId].col = col.id;
-          saveState(true);
-          render();
-        }
-      });
+      // Drag-drop only when visible
+      if (!hidden) {
+        colEl.addEventListener('dragover', e => { e.preventDefault(); colEl.querySelector('.column-body').classList.add('drag-over'); });
+        colEl.addEventListener('dragleave', () => { colEl.querySelector('.column-body').classList.remove('drag-over'); });
+        colEl.addEventListener('drop', e => {
+          e.preventDefault();
+          colEl.querySelector('.column-body').classList.remove('drag-over');
+          const cardId = e.dataTransfer.getData('cardId');
+          if (cardId && state.cards[cardId]) {
+            state.cards[cardId].col = col.id;
+            saveState(true);
+            render();
+          }
+        });
+      }
+
+      const hiddenMsg = hidden
+        ? `<div class="empty-card">🔒 Cards are hidden until the timer ends.</div>`
+        : '';
 
       colEl.innerHTML = `
         <div class="column-header">
@@ -907,8 +364,8 @@
           <div class="col-count">${cards.length}</div>
         </div>
         <div class="column-body" id="body-${col.id}">
-          ${cards.length === 0 ? `<div class="empty-card">No cards yet.<br>Add the first one! 👇</div>` : ''}
-          ${cards.map((c, i) => renderCard(c, i)).join('')}
+          ${hidden ? hiddenMsg : (cards.length === 0 ? `<div class="empty-card">No cards yet.<br>Add the first one! 👇</div>` : '')}
+          ${cards.map((c, i) => renderCard(c, i, hidden)).join('')}
           <div class="add-card-area" id="addArea-${col.id}" style="display:${addingTo===col.id?'flex':'none'};flex-direction:column;gap:8px">
             <textarea class="add-card-textarea" id="textarea-${col.id}" placeholder="Share your thoughts..." rows="3"></textarea>
             <div class="add-card-actions">
@@ -925,16 +382,21 @@
       board.appendChild(colEl);
     });
 
-    document.querySelectorAll('.card').forEach(el => {
-      el.addEventListener('dragstart', e => {
-        e.dataTransfer.setData('cardId', el.dataset.id);
-        el.classList.add('dragging');
+    // Drag handlers (only when visible)
+    if (!hidden) {
+      document.querySelectorAll('.card[draggable="true"]').forEach(el => {
+        el.addEventListener('dragstart', e => {
+          e.dataTransfer.setData('cardId', el.dataset.id);
+          el.classList.add('dragging');
+        });
+        el.addEventListener('dragend', () => el.classList.remove('dragging'));
       });
-      el.addEventListener('dragend', () => el.classList.remove('dragging'));
-    });
+    }
   }
 
   function renderDiscussView(board) {
+    const hidden = cardsHiddenNow();
+
     board.style.display = 'block';
 
     const allCards = Object.values(state.cards || {})
@@ -959,9 +421,9 @@
           <div class="discuss-item ${done ? 'done' : ''} ${isActive ? 'active' : ''}" onclick="setActiveDiscuss('${c.id}')">
             <div class="discuss-rank-num ${globalRank === 0 ? 'top' : ''}">${globalRank + 1}</div>
             <div class="discuss-item-body">
-              <div class="discuss-item-text">${escHtml(c.text)}</div>
+              <div class="discuss-item-text">${hidden ? '🔒 Hidden until timer ends' : escHtml(c.text)}</div>
               <div class="discuss-item-meta">
-                ${votes > 0 ? `<span class="discuss-vote-pill">❤️ ${votes}</span>` : ''}
+                ${!hidden && votes > 0 ? `<span class="discuss-vote-pill">❤️ ${votes}</span>` : ''}
               </div>
             </div>
             <div class="discuss-check" onclick="event.stopPropagation();toggleDiscussed('${c.id}')">${done ? '✓' : ''}</div>
@@ -981,7 +443,7 @@
           </div>
           <div class="column-body">
             ${cards.length === 0 ? `<div class="empty-card">No cards</div>` : ''}
-            ${cards.map((c, i) => renderCard(c, i)).join('')}
+            ${cards.map((c, i) => renderCard(c, i, hidden)).join('')}
           </div>
         </div>`;
     });
@@ -1010,30 +472,48 @@
     }
   }
 
-  function renderCard(c, rank) {
+  function renderCard(c, rank, hidden) {
     const myVote = c.votes && c.votes.includes(currentUser);
     const voteCount = c.votes ? c.votes.length : 0;
-    const isOwner = c.author === currentUser;
-    const showRank = state.phase === 2 && voteCount > 0;
+    const owner = c.author === currentUser;
+
+    // Delete permission:
+    // - owner can delete own card anytime
+    // - host can delete any card anytime
+    const canDelete = owner || isHost();
+
+    const showRank = !hidden && state.phase === 2 && voteCount > 0;
     const isTop = showRank && rank === 0;
 
-    return `<div class="card" draggable="true" data-id="${c.id}">
+    const cardBody = hidden
+      ? `<div class="card-text" style="color:var(--muted)">🔒 Hidden until the timer ends</div>`
+      : `<div class="card-text">${escHtml(c.text)}</div>`;
+
+    const voteBtn = (!hidden && state.phase >= 1)
+      ? `<button class="vote-btn ${myVote?'voted':''}" onclick="toggleVote('${c.id}')">${myVote?'❤️':'🤍'} ${voteCount}</button>`
+      : '';
+
+    const delBtn = canDelete
+      ? `<div class="card-actions">
+          <button class="card-action-btn" title="Delete" onclick="deleteCard('${c.id}')">✕</button>
+        </div>`
+      : '';
+
+    return `<div class="card" draggable="${hidden ? 'false' : 'true'}" data-id="${c.id}">
       ${showRank ? `<div style="margin-bottom:6px"><span class="rank-badge ${isTop?'top':''}">${isTop?'🥇':''} ${voteCount} vote${voteCount !== 1 ? 's' : ''}</span></div>` : ''}
-      <div class="card-text">${escHtml(c.text)}</div>
+      ${cardBody}
       <div class="card-footer">
         <span></span>
         <div style="display:flex;gap:4px;align-items:center">
-          ${state.phase >= 1 ? `<button class="vote-btn ${myVote?'voted':''}" onclick="toggleVote('${c.id}')">${myVote?'❤️':'🤍'} ${voteCount}</button>` : ''}
-          ${isOwner && state.phase === 0 ? `<div class="card-actions">
-            <button class="card-action-btn" title="Delete" onclick="deleteCard('${c.id}')">✕</button>
-          </div>` : ''}
+          ${voteBtn}
+          ${delBtn}
         </div>
       </div>
     </div>`;
   }
 
   // ============================================================
-  // ACTIONS exposed (inline onclick)
+  // ACTIONS
   // ============================================================
   window.showAdd = function showAdd(colId) {
     addingTo = colId;
@@ -1066,8 +546,16 @@
   };
 
   window.deleteCard = function deleteCard(id) {
-    if (!confirm('Delete this card?')) return;
     if (!state.cards || !state.cards[id]) return;
+
+    const owner = state.cards[id].author === currentUser;
+    if (!(owner || isHost())) {
+      toast('You can only delete your own cards (unless you are the host).', 3000);
+      return;
+    }
+
+    if (!confirm('Delete this card?')) return;
+
     delete state.cards[id];
     saveState(true);
     render();
@@ -1075,6 +563,10 @@
 
   window.toggleVote = function toggleVote(id) {
     if (!state.cards || !state.cards[id]) return;
+
+    // If cards hidden, ignore votes
+    if (cardsHiddenNow()) return;
+
     const votes = state.cards[id].votes || [];
     const idx = votes.indexOf(currentUser);
     if (idx === -1) votes.push(currentUser);
@@ -1138,6 +630,3 @@
   initBoardId();
   setSyncStatus('live');
 </script>
-
-</body>
-</html>
