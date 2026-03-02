@@ -1016,7 +1016,8 @@
   function renderCard(c, rank) {
     const myVote = c.votes && c.votes.includes(currentUser);
     const voteCount = c.votes ? c.votes.length : 0;
-    const isOwner = c.author === currentUser;
+    const uid = auth.currentUser?.uid || null;
+    const isOwner = (c.ownerUid && uid) ? (c.ownerUid === uid) : (c.author === currentUser);
     const showRank = state.phase === 2 && voteCount > 0;
     const isTop = showRank && rank === 0;
 
@@ -1027,7 +1028,7 @@
         <span></span>
         <div style="display:flex;gap:4px;align-items:center">
           ${state.phase >= 1 ? `<button class="vote-btn ${myVote?'voted':''}" onclick="toggleVote('${c.id}')">${myVote?'❤️':'🤍'} ${voteCount}</button>` : ''}
-          ${isOwner && state.phase === 0 ? `<div class="card-actions">
+          ${isOwner ? `<div class="card-actions">
             <button class="card-action-btn" title="Delete" onclick="deleteCard('${c.id}')">✕</button>
           </div>` : ''}
         </div>
@@ -1053,28 +1054,52 @@
   };
 
   window.addCard = function addCard(colId) {
-    const ta = document.getElementById('textarea-' + colId);
-    if (!ta) return;
-    const text = ta.value.trim();
-    if (!text) return;
+  const ta = document.getElementById('textarea-' + colId);
+  if (!ta) return;
 
-    const id = Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-    state.cards = state.cards || {};
-    state.cards[id] = { id, text, author: currentUser, col: colId, votes: [], ts: Date.now() };
+  const text = ta.value.trim();
+  if (!text) return;
 
-    saveState(true);
-    addingTo = null;
-    render();
-    toast('Card added!');
+  const id = Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  const uid = auth.currentUser?.uid || null;
+
+  state.cards = state.cards || {};
+
+  state.cards[id] = {
+    id,
+    text,
+    author: currentUser,
+    ownerUid: uid,   // ✅ NEW
+    col: colId,
+    votes: [],
+    ts: Date.now()
   };
+
+  saveState(true);
+  addingTo = null;
+  render();
+  toast('Card added!');
+};
 
   window.deleteCard = function deleteCard(id) {
-    if (!confirm('Delete this card?')) return;
-    if (!state.cards || !state.cards[id]) return;
-    delete state.cards[id];
-    saveState(true);
-    render();
-  };
+  const uid = auth.currentUser?.uid || null;
+
+  if (!confirm('Delete this card?')) return;
+  if (!state.cards || !state.cards[id]) return;
+
+  const card = state.cards[id];
+
+  // Only owner can delete (fallback to author for old cards)
+  const isOwner = (card.ownerUid && uid) ? (card.ownerUid === uid) : (card.author === currentUser);
+  if (!isOwner) {
+    toast("You can delete only your own cards.");
+    return;
+  }
+
+  delete state.cards[id];
+  saveState(true);
+  render();
+};
 
   window.toggleVote = function toggleVote(id) {
     if (!state.cards || !state.cards[id]) return;
