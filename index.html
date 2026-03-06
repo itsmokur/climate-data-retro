@@ -624,12 +624,13 @@
   ];
 
   let state = {
-    cards: {},
-    phase: 0,
-    title: 'Sprint Retrospective #1',
-    discussed: {},
-    activeDiscuss: null
-  };
+  cards: {},
+  groups: {},
+  phase: 0,
+  title: 'Sprint Retrospective #1',
+  discussed: {},
+  activeDiscuss: null
+};
 
   let currentUser = '';
   let boardId = '';
@@ -884,7 +885,35 @@
 
     COLUMNS.forEach(col => {
       const cards = Object.values(state.cards || {}).filter(c => c.col === col.id)
-        .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+const groupedMap = {};
+const singles = [];
+
+cards.forEach(c => {
+  if (c.groupId) {
+    if (!groupedMap[c.groupId]) groupedMap[c.groupId] = [];
+    groupedMap[c.groupId].push(c);
+  } else {
+    singles.push(c);
+  }
+});
+
+const renderedIds = new Set();
+const contentParts = [];
+
+cards.forEach(c => {
+  if (renderedIds.has(c.id)) return;
+
+  if (c.groupId && groupedMap[c.groupId]) {
+    const groupCardsList = groupedMap[c.groupId];
+    groupCardsList.forEach(gc => renderedIds.add(gc.id));
+    contentParts.push(renderGroup(c.groupId, groupCardsList));
+  } else {
+    renderedIds.add(c.id);
+    contentParts.push(renderCard(c, 0));
+  }
+});
 
       const colEl = document.createElement('div');
       colEl.className = 'column';
@@ -911,7 +940,7 @@
         </div>
         <div class="column-body" id="body-${col.id}">
           ${cards.length === 0 ? `<div class="empty-card">No cards yet.<br>Add the first one! 👇</div>` : ''}
-          ${cards.map((c, i) => renderCard(c, i)).join('')}
+          ${contentParts.join('')}
           <div class="add-card-area" id="addArea-${col.id}" style="display:${addingTo===col.id?'flex':'none'};flex-direction:column;gap:8px">
             <textarea class="add-card-textarea" id="textarea-${col.id}" placeholder="Share your thoughts..." rows="3"></textarea>
             <div class="add-card-actions">
@@ -928,13 +957,30 @@
       board.appendChild(colEl);
     });
 
-    document.querySelectorAll('.card').forEach(el => {
-      el.addEventListener('dragstart', e => {
-        e.dataTransfer.setData('cardId', el.dataset.id);
-        el.classList.add('dragging');
-      });
-      el.addEventListener('dragend', () => el.classList.remove('dragging'));
-    });
+    document.querySelectorAll('.card[data-id]').forEach(el => {
+  el.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('cardId', el.dataset.id);
+    el.classList.add('dragging');
+  });
+
+  el.addEventListener('dragend', () => el.classList.remove('dragging'));
+
+  el.addEventListener('dragover', e => {
+    e.preventDefault();
+  });
+
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const sourceCardId = e.dataTransfer.getData('cardId');
+    const targetCardId = el.dataset.id;
+
+    if (!sourceCardId || !targetCardId || sourceCardId === targetCardId) return;
+
+    groupCards(sourceCardId, targetCardId);
+  });
+});
   }
 
   function renderDiscussView(board) {
@@ -1011,17 +1057,50 @@
         activeEl.style.transform = 'translateY(-2px)';
       }
     }
-  }
+}
 
-  function renderCard(c, rank) {
+function renderGroup(groupId, cardsInGroup) {
+  const group = state.groups?.[groupId];
+  const title = group?.title || 'Grouped cards';
+
+  return `
+    <div class="group-card" style="background:var(--bg); border:1px dashed var(--border); border-radius:8px; padding:12px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px;">
+        <input
+          value="${escHtml(title)}"
+          onchange="updateGroupTitle('${groupId}', this.value)"
+          style="width:100%; border:none; outline:none; background:transparent; font-weight:700; font-size:13px; color:var(--text);"
+        />
+        <span class="rank-badge">${cardsInGroup.length} cards</span>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        ${cardsInGroup.map((c, i) => `
+          <div style="background:white; border:1px solid var(--border); border-radius:8px; padding:10px;">
+            ${renderCard(c, i, true)}
+            <div style="margin-top:6px; display:flex; justify-content:flex-end;">
+              <button class="btn-ghost" style="font-size:11px; padding:4px 8px;" onclick="ungroupCard('${c.id}')">
+                Ungroup
+              </button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+  function renderCard(c, rank, compact = false) {
     const myVote = c.votes && c.votes.includes(currentUser);
     const voteCount = c.votes ? c.votes.length : 0;
     const uid = auth.currentUser?.uid || null;
     const isOwner = (c.ownerUid && uid) ? (c.ownerUid === uid) : (c.author === currentUser);
     const showRank = state.phase === 2 && voteCount > 0;
     const isTop = showRank && rank === 0;
+    
+    const cardStyle = compact ? 'style="margin:0; box-shadow:none;"' : '';
 
-    return `<div class="card" draggable="true" data-id="${c.id}">
+    return `<div class="card" ${cardStyle} draggable="true" data-id="${c.id}">
       ${showRank ? `<div style="margin-bottom:6px"><span class="rank-badge ${isTop?'top':''}">${isTop?'🥇':''} ${voteCount} vote${voteCount !== 1 ? 's' : ''}</span></div>` : ''}
       <div class="card-text">${escHtml(c.text)}</div>
       <div class="card-footer">
@@ -1035,7 +1114,72 @@
       </div>
     </div>`;
   }
+function createGroupId() {
+  return 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+}
 
+function ensureGroupsState() {
+  if (!state.groups) state.groups = {};
+}
+
+function groupCards(sourceCardId, targetCardId) {
+  if (!state.cards[sourceCardId] || !state.cards[targetCardId]) return;
+  if (sourceCardId === targetCardId) return;
+
+  ensureGroupsState();
+
+  const source = state.cards[sourceCardId];
+  const target = state.cards[targetCardId];
+
+  // same column only
+  if (source.col !== target.col) return;
+
+  let groupId = target.groupId || source.groupId;
+
+  // neither card is grouped yet -> create new group
+  if (!groupId) {
+    groupId = createGroupId();
+    state.groups[groupId] = {
+      id: groupId,
+      title: 'Grouped cards'
+    };
+  }
+
+  source.groupId = groupId;
+  target.groupId = groupId;
+
+  saveState(true);
+  render();
+  toast('Cards grouped');
+}
+
+function ungroupCard(cardId) {
+  if (!state.cards[cardId]) return;
+  const groupId = state.cards[cardId].groupId;
+  if (!groupId) return;
+
+  state.cards[cardId].groupId = null;
+
+  const remaining = Object.values(state.cards).filter(c => c.groupId === groupId);
+  if (remaining.length <= 1) {
+    remaining.forEach(c => c.groupId = null);
+    if (state.groups && state.groups[groupId]) delete state.groups[groupId];
+  }
+
+  saveState(true);
+  render();
+}
+
+function updateGroupTitle(groupId, title) {
+  ensureGroupsState();
+  if (!state.groups[groupId]) return;
+  state.groups[groupId].title = title.trim() || 'Grouped cards';
+  saveState(true);
+}
+window.groupCards = groupCards;
+window.ungroupCard = ungroupCard;
+window.updateGroupTitle = updateGroupTitle;
+  
   // ============================================================
   // ACTIONS exposed (inline onclick)
   // ============================================================
@@ -1071,6 +1215,7 @@
     author: currentUser,
     ownerUid: uid,   // ✅ NEW
     col: colId,
+    groupId: null,
     votes: [],
     ts: Date.now()
   };
