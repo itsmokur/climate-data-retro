@@ -798,8 +798,9 @@ function renderGroup(groupId, cardsInGroup) {
 }
 
 function renderCard(c, rank, compact = false) {
-  const myVote = c.votes && (Array.isArray(c.votes) ? c.votes.includes(clientId) : c.votes[clientId]);
-  const voteCount = getVoteCount(c);
+  const votes = Array.isArray(c.votes) ? c.votes : [];
+  const myVote = votes.includes(clientId);
+  const voteCount = votes.length;
   const uid = auth.currentUser?.uid || null;
   const isOwner = (c.ownerUid && uid) ? (c.ownerUid === uid) : (c.author === currentUser);
   const showRank = localPhase === 2 && voteCount > 0;
@@ -823,8 +824,8 @@ function renderCard(c, rank, compact = false) {
 // ============================================================
 function getVoteCount(c) {
   if (!c.votes) return 0;
-  if (Array.isArray(c.votes)) return c.votes.length; // legacy
-  return Object.keys(c.votes).length;
+  if (Array.isArray(c.votes)) return c.votes.length;
+  return 0;
 }
 
 function renderDiscussView(board) {
@@ -1016,16 +1017,12 @@ window.deleteCard = function(id) {
 
 window.toggleVote = function(id) {
   if (!state.cards?.[id]) return;
-  const votes = state.cards[id].votes || {};
-  // migrate array to object if needed
-  if (Array.isArray(votes)) {
-    state.cards[id].votes = {};
-  }
-  if (state.cards[id].votes[clientId]) {
-    delete state.cards[id].votes[clientId];
-  } else {
-    state.cards[id].votes[clientId] = currentUser;
-  }
+  let votes = state.cards[id].votes;
+  // normalize to array
+  if (!votes || typeof votes === 'object' && !Array.isArray(votes)) votes = [];
+  const idx = votes.indexOf(clientId);
+  if (idx === -1) votes.push(clientId); else votes.splice(idx, 1);
+  state.cards[id].votes = votes;
   saveState(true); render();
 };
 
