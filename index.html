@@ -798,8 +798,8 @@ function renderGroup(groupId, cardsInGroup) {
 }
 
 function renderCard(c, rank, compact = false) {
-  const myVote = c.votes && c.votes.includes(currentUser);
-  const voteCount = c.votes ? c.votes.length : 0;
+  const myVote = c.votes && (Array.isArray(c.votes) ? c.votes.includes(clientId) : c.votes[clientId]);
+  const voteCount = getVoteCount(c);
   const uid = auth.currentUser?.uid || null;
   const isOwner = (c.ownerUid && uid) ? (c.ownerUid === uid) : (c.author === currentUser);
   const showRank = localPhase === 2 && voteCount > 0;
@@ -821,9 +821,15 @@ function renderCard(c, rank, compact = false) {
 // ============================================================
 // DISCUSS VIEW
 // ============================================================
+function getVoteCount(c) {
+  if (!c.votes) return 0;
+  if (Array.isArray(c.votes)) return c.votes.length; // legacy
+  return Object.keys(c.votes).length;
+}
+
 function renderDiscussView(board) {
   board.style.display = 'block';
-  const allCards = Object.values(state.cards || {}).sort((a,b) => (b.votes?.length||0)-(a.votes?.length||0));
+  const allCards = Object.values(state.cards || {}).sort((a,b) => getVoteCount(b) - getVoteCount(a));
   const discussed = state.discussed || {};
   const doneCount = Object.keys(discussed).filter(id => discussed[id] && state.cards[id]).length;
   const totalCount = allCards.length;
@@ -835,7 +841,7 @@ function renderDiscussView(board) {
     if (!colCards.length) return;
     sidebarItems += `<div class="discuss-section-label">${col.title}</div>`;
     colCards.forEach(c => {
-      const votes = c.votes?.length || 0;
+      const votes = getVoteCount(c);
       const done = discussed[c.id];
       const isActive = state.activeDiscuss === c.id;
       const globalRank = allCards.indexOf(c);
@@ -894,7 +900,6 @@ function renderActionsView(board) {
   board.style.display = 'block';
   const actions = Object.values(state.actions || {}).sort((a,b) => (a.ts||0)-(b.ts||0));
   const doneCount = actions.filter(a => a.done).length;
-
   const today = new Date().toISOString().split('T')[0];
 
   const actionItems = actions.length === 0
@@ -915,25 +920,63 @@ function renderActionsView(board) {
           </div>`;
       }).join('');
 
+  // Discussion queue sidebar (same as discuss view but read-only)
+  const allCards = Object.values(state.cards || {}).sort((a,b) => getVoteCount(b) - getVoteCount(a));
+  const discussed = state.discussed || {};
+  const discussedCount = Object.keys(discussed).filter(id => discussed[id] && state.cards[id]).length;
+  const totalCount = allCards.length;
+  const pct = totalCount > 0 ? Math.round((discussedCount/totalCount)*100) : 0;
+
+  let sidebarItems = '';
+  COLUMNS.forEach(col => {
+    const colCards = allCards.filter(c => c.col === col.id);
+    if (!colCards.length) return;
+    sidebarItems += `<div class="discuss-section-label">${col.title}</div>`;
+    colCards.forEach((c, i) => {
+      const votes = getVoteCount(c);
+      const done = discussed[c.id];
+      const globalRank = allCards.indexOf(c);
+      sidebarItems += `
+        <div class="discuss-item ${done?'done':''}" style="cursor:default">
+          <div class="discuss-rank-num ${globalRank===0?'top':''}">${globalRank+1}</div>
+          <div class="discuss-item-body">
+            <div class="discuss-item-text">${escHtml(c.text)}</div>
+            <div class="discuss-item-meta">
+              ${votes>0?`<span class="discuss-vote-pill">❤️ ${votes}</span>`:''}
+              ${done?`<span style="font-size:10px;color:var(--green);font-weight:600">✓ discussed</span>`:''}
+            </div>
+          </div>
+        </div>`;
+    });
+  });
+
   board.innerHTML = `
-    <div class="actions-layout">
-      <div class="actions-header">
-        <div>
-          <h2>✅ Action Items</h2>
-          <p>${doneCount} of ${actions.length} completed</p>
+    <div class="discuss-layout">
+      <div class="discuss-sidebar">
+        <div class="discuss-sidebar-header">
+          <h3>💬 Discussion Summary</h3>
+          <span class="discuss-progress">${discussedCount}/${totalCount}</span>
         </div>
+        <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
+        <div class="discuss-list">${sidebarItems||'<div style="padding:16px;font-size:12px;color:var(--muted)">No cards discussed yet.</div>'}</div>
       </div>
-
-      <div class="action-list">${actionItems}</div>
-
-      <div class="add-action-form">
-        <textarea id="actionText" placeholder="What needs to happen? e.g. 'Set up weekly sync with Igor'" rows="2"></textarea>
-        <div class="add-action-fields">
-          <input id="actionAssignee" placeholder="👤 Assignee (optional)" />
-          <input id="actionDue" type="date" title="Due date (optional)" />
+      <div style="flex:1;min-width:0">
+        <div class="actions-header" style="margin-bottom:20px">
+          <div>
+            <h2>✅ Action Items</h2>
+            <p>${doneCount} of ${actions.length} completed</p>
+          </div>
         </div>
-        <div class="add-action-btns">
-          <button class="btn-primary" onclick="addAction()">+ Add Action</button>
+        <div class="action-list">${actionItems}</div>
+        <div class="add-action-form">
+          <textarea id="actionText" placeholder="What needs to happen? e.g. 'Set up weekly sync with Igor'" rows="2"></textarea>
+          <div class="add-action-fields">
+            <input id="actionAssignee" placeholder="👤 Assignee (optional)" />
+            <input id="actionDue" type="date" title="Due date (optional)" />
+          </div>
+          <div class="add-action-btns">
+            <button class="btn-primary" onclick="addAction()">+ Add Action</button>
+          </div>
         </div>
       </div>
     </div>`;
@@ -973,10 +1016,16 @@ window.deleteCard = function(id) {
 
 window.toggleVote = function(id) {
   if (!state.cards?.[id]) return;
-  const votes = state.cards[id].votes || [];
-  const idx = votes.indexOf(currentUser);
-  if (idx === -1) votes.push(currentUser); else votes.splice(idx,1);
-  state.cards[id].votes = votes;
+  const votes = state.cards[id].votes || {};
+  // migrate array to object if needed
+  if (Array.isArray(votes)) {
+    state.cards[id].votes = {};
+  }
+  if (state.cards[id].votes[clientId]) {
+    delete state.cards[id].votes[clientId];
+  } else {
+    state.cards[id].votes[clientId] = currentUser;
+  }
   saveState(true); render();
 };
 
