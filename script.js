@@ -15,15 +15,11 @@ const firebaseConfig = {
     measurementId: "G-WM0NN6VJCF"
 };
 
-try {
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const auth = getAuth(app);
-    try { if (await analyticsSupported()) getAnalytics(app); } catch (_) { }
-} catch (error) {
-    console.error(error);
-    toast('Firebase initialization failed.', 5000);
-}
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const auth = getAuth(app);
+try { if (await analyticsSupported()) getAnalytics(app); } catch (_) { }
+
 
 // ============================================================
 // STATE
