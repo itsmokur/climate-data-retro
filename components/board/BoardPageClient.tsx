@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { signInAnonymously } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { getClientId } from '@/lib/clientId';
@@ -33,9 +33,9 @@ export function BoardPageClient({ boardId }: BoardPageClientProps) {
 
   const clientId = getClientId();
   const { toasts, toast } = useToast();
-  const { saveState } = useBoardState(boardId, setState, setSyncStatus);
+  const { saveState } = useBoardState(boardId, joined, (newState) => setState(newState), (status) => setSyncStatus(status));
   const { onlineUsers } = usePresence(boardId, clientId, joined ? currentUser : '');
-  const { displayTime, isWarning, timerModel, setTimer, toggleTimer, resetTimer } = useTimer(boardId);
+  const { displayTime, isWarning, timerModel, setTimer, toggleTimer, resetTimer } = useTimer(boardId, joined);
 
   // Helper to update state and persist
   const update = useCallback(

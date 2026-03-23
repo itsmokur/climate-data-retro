@@ -12,7 +12,7 @@ const DEFAULT_TIMER: TimerModel = {
   remainingSec: 5 * 60,
 };
 
-export function useTimer(boardId: string) {
+export function useTimer(boardId: string, joined: boolean) {
   const [timerModel, setTimerModel] = useState<TimerModel>(DEFAULT_TIMER);
   const [displayTime, setDisplayTime] = useState('05:00');
   const [isWarning, setIsWarning] = useState(false);
@@ -30,7 +30,7 @@ export function useTimer(boardId: string) {
     `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
   useEffect(() => {
-    if (!boardId) return;
+    if (!boardId || !joined) return;
     const unsub = onValue(timerRef, async (snap) => {
       if (snap.exists()) {
         setTimerModel(snap.val() as TimerModel);
@@ -40,7 +40,7 @@ export function useTimer(boardId: string) {
     });
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardId]);
+  }, [boardId, joined]);
 
   // Tick every second
   useEffect(() => {
