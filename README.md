@@ -1,4 +1,4 @@
-# Retro Board (Realtime)
+# Retro Board
 
 A lightweight, single-file retrospective board that works in real time for everyone who opens the same URL.
 
