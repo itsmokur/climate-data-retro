@@ -129,7 +129,18 @@ function subscribeBoardState() {
             await set(boardStateRef, state);
         }
         setSyncStatus('live');
+        const savedText = addingTo
+            ? (document.getElementById('textarea-' + addingTo)?.value ?? '')
+            : '';
         render();
+        if (addingTo) {
+            const ta = document.getElementById('textarea-' + addingTo);
+            if (ta) {
+                ta.value = savedText;
+                ta.focus();
+                ta.selectionStart = ta.selectionEnd = savedText.length;
+            }
+        }
     }, (err) => {
         console.error(err);
         setSyncStatus('offline');
