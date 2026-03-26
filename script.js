@@ -458,7 +458,7 @@ function renderActionsView(board) {
         const colCards = allCards.filter(c => c.col === col.id);
         if (!colCards.length) return;
         sidebarItems += `<div class="discuss-section-label">${col.title}</div>`;
-        colCards.forEach((c, i) => {
+        colCards.forEach((c) => {
             const votes = getVoteCount(c);
             const done = discussed[c.id];
             const globalRank = allCards.indexOf(c);
@@ -525,8 +525,10 @@ window.addCard = function (colId) {
     const id = Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     const uid = auth.currentUser?.uid || null;
     state.cards = state.cards || {};
-    state.cards[id] = { id, text, author: currentUser, ownerUid: uid, col: colId, groupId: null, votes: [], ts: Date.now() };
-    saveState(true); addingTo = null; render(); toast('Card added!');
+    const newCard = { id, text, author: currentUser, ownerUid: uid, col: colId, groupId: null, votes: [], ts: Date.now() };
+    state.cards[id] = newCard;
+    update(boardStateRef, { [`cards/${id}`]: newCard }).catch(console.error);
+    addingTo = null; render(); toast('Card added!');
 };
 
 window.deleteCard = function (id) {
@@ -537,7 +539,8 @@ window.deleteCard = function (id) {
     const isOwner = (card.ownerUid && uid) ? (card.ownerUid === uid) : (card.author === currentUser);
     if (!isOwner) { toast('You can only delete your own cards.'); return; }
     delete state.cards[id];
-    saveState(true); render();
+    update(boardStateRef, { [`cards/${id}`]: null }).catch(console.error);
+    render();
 };
 
 window.toggleVote = function (id) {
@@ -548,18 +551,21 @@ window.toggleVote = function (id) {
     const idx = votes.indexOf(clientId);
     if (idx === -1) votes.push(clientId); else votes.splice(idx, 1);
     state.cards[id].votes = votes;
-    saveState(true); render();
+    update(boardStateRef, { [`cards/${id}/votes`]: votes }).catch(console.error);
+    render();
 };
 
 window.toggleDiscussed = function (id) {
     state.discussed = state.discussed || {};
     state.discussed[id] = !state.discussed[id];
-    saveState(true); render();
+    update(boardStateRef, { [`discussed/${id}`]: state.discussed[id] }).catch(console.error);
+    render();
 };
 
 window.setActiveDiscuss = function (id) {
     state.activeDiscuss = state.activeDiscuss === id ? null : id;
-    saveState(true); render();
+    update(boardStateRef, { activeDiscuss: state.activeDiscuss }).catch(console.error);
+    render();
     setTimeout(() => { const el = document.querySelector(`.card[data-id="${id}"]`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 50);
 };
 
@@ -572,22 +578,26 @@ window.addAction = function () {
     const assignee = document.getElementById('actionAssignee')?.value.trim() || '';
     const dueDate = document.getElementById('actionDue')?.value || '';
     const id = 'a_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const newAction = { id, text, assignee, dueDate, done: false, createdBy: currentUser, ts: Date.now() };
     state.actions = state.actions || {};
-    state.actions[id] = { id, text, assignee, dueDate, done: false, createdBy: currentUser, ts: Date.now() };
-    saveState(true); render(); toast('Action item added!');
+    state.actions[id] = newAction;
+    update(boardStateRef, { [`actions/${id}`]: newAction }).catch(console.error);
+    render(); toast('Action item added!');
 };
 
 window.toggleAction = function (id) {
     if (!state.actions?.[id]) return;
     state.actions[id].done = !state.actions[id].done;
-    saveState(true); render();
+    update(boardStateRef, { [`actions/${id}/done`]: state.actions[id].done }).catch(console.error);
+    render();
 };
 
 window.deleteAction = function (id) {
     if (!confirm('Delete this action item?')) return;
     if (!state.actions?.[id]) return;
     delete state.actions[id];
-    saveState(true); render();
+    update(boardStateRef, { [`actions/${id}`]: null }).catch(console.error);
+    render();
 };
 
 // ============================================================
@@ -601,9 +611,17 @@ window.groupCards = function (sourceCardId, targetCardId) {
     const target = state.cards[targetCardId];
     if (source.col !== target.col) return;
     let groupId = target.groupId || source.groupId;
-    if (!groupId) { groupId = 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6); state.groups[groupId] = { id: groupId, title: 'Grouped cards' }; }
+    const updates = {};
+    if (!groupId) {
+        groupId = 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+        state.groups[groupId] = { id: groupId, title: 'Grouped cards' };
+        updates[`groups/${groupId}`] = state.groups[groupId];
+    }
     source.groupId = groupId; target.groupId = groupId;
-    saveState(true); render(); toast('Cards grouped');
+    updates[`cards/${sourceCardId}/groupId`] = groupId;
+    updates[`cards/${targetCardId}/groupId`] = groupId;
+    update(boardStateRef, updates).catch(console.error);
+    render(); toast('Cards grouped');
 };
 
 window.ungroupCard = function (cardId) {
@@ -612,15 +630,19 @@ window.ungroupCard = function (cardId) {
     if (!groupId) return;
     state.cards[cardId].groupId = null;
     const remaining = Object.values(state.cards).filter(c => c.groupId === groupId);
-    if (remaining.length <= 1) { remaining.forEach(c => c.groupId = null); if (state.groups?.[groupId]) delete state.groups[groupId]; }
-    saveState(true); render();
+    const updates = { [`cards/${cardId}/groupId`]: null };
+    if (remaining.length <= 1) {
+        remaining.forEach(c => { updates[`cards/${c.id}/groupId`] = null; c.groupId = null; });
+        if (state.groups?.[groupId]) { delete state.groups[groupId]; updates[`groups/${groupId}`] = null; }
+    }
+    update(boardStateRef, updates).catch(console.error);
+    render();
 };
 
 window.updateGroupTitle = function (groupId, title) {
-    if (!state.groups) state.groups = {};
-    if (!state.groups[groupId]) return;
+    if (!state.groups?.[groupId]) return;
     state.groups[groupId].title = title.trim() || 'Grouped cards';
-    saveState(true);
+    update(boardStateRef, { [`groups/${groupId}/title`]: state.groups[groupId].title }).catch(console.error);
 };
 
 // ============================================================
@@ -641,7 +663,11 @@ window.closeShare = function () { document.getElementById('shareModal').style.di
 window.copyShareUrl = async function () { await navigator.clipboard.writeText(window.location.href); toast('Link copied! 🎉'); closeShare(); };
 
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('retroTitle').addEventListener('input', e => { state.title = e.target.value; saveState(false); });
+    document.getElementById('retroTitle').addEventListener('input', e => {
+        state.title = e.target.value;
+        clearTimeout(saveDebounce);
+        saveDebounce = setTimeout(() => update(boardStateRef, { title: state.title }).catch(console.error), 250);
+    });
 });
 
 // INIT
