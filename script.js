@@ -129,9 +129,11 @@ function subscribeBoardState() {
             await set(boardStateRef, state);
         }
         setSyncStatus('live');
+        console.log('[subscribeBoardState] addingTo:', addingTo);
         const savedText = addingTo
             ? (document.getElementById('textarea-' + addingTo)?.value ?? '')
             : '';
+        console.log('[subscribeBoardState] savedText:', savedText);
         render();
         if (addingTo) {
             const ta = document.getElementById('textarea-' + addingTo);
